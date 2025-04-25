@@ -1,4 +1,4 @@
-provider "aws" {
+provider "aws" { # Este archivo sube una VPC desde Terraform Cloud
   region = "us-east-1"
 }
 
