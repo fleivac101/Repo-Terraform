@@ -1,13 +1,19 @@
-provider "aws" { # Este archivo sube una VPC desde Terraform Cloud
+provider "aws" {
   region = "us-east-2"
 }
 
-resource "aws_vpc" "mi_vpc_test" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-
+resource "aws_instance" "tf-demo-aws-ec2-instance-2" {
+  ami           = "ami-058a8a5ab36292159"
+  instance_type = "t2.micro"
+  key_name      = "Ansible"  # <--- Agregalo aquí (nombre exacto del par creado)
   tags = {
-    Name = "VPC-Terraform-Test Suscription"
+    Name = "SOMOS_GBM"
+  }
+}
+  resource "aws_s3_bucket" "simple_bucket" {
+  bucket = "tf-simple-s3-bucket-123456" # Cambialo por un nombre único
+  acl    = "private"
+  tags = {
+    Name = "SOMOS_GBM S3 41"
   }
 }
