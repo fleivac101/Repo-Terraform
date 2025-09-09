@@ -1,6 +1,6 @@
 vsphere_user = "mjarquin"
 vsphere_password = "K^$Vk4RdtflB5FYsZYQb"
-vsphere_server = "vcenter.gbmcoelab.com"
+vsphere_server = "172.31.235.23"
 datacenter_name = "SabanaLab"
 datastore_name = "Datastore01"
 cluster_name = "SabanaCluster"
@@ -12,4 +12,5 @@ cpu_number = "1"
 memory_amount = "4096"
 host_name = "agentetf"
 host_domain = "idm.gbmcoelab.com"
+
 ip_address = "172.31.235.220"
