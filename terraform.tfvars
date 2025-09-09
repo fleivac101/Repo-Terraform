@@ -10,7 +10,8 @@ disk_size_0 = "50"
 vm_name = "agentetf"
 cpu_number = "1"
 memory_amount = "4096"
-host_name = "agentetf"
+host_name = "agenteterraformcloud"
 host_domain = "idm.gbmcoelab.com"
 
 ip_address = "172.31.235.220"
+
