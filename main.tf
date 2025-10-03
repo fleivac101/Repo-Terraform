@@ -59,6 +59,9 @@ resource "vsphere_virtual_machine" "vm" {
           ipv4_address = var.ip_address
           ipv4_netmask = 24
         }
+        ipv4_gateway = var.gateway   # 🔹 agregar esto
+      }
       }
     }
+
 }
