@@ -61,7 +61,7 @@ resource "vsphere_virtual_machine" "vm" {
         }
         ipv4_gateway = var.gateway   # 🔹 agregar esto
       }
-      }
+     }
     }
 
-}
+
