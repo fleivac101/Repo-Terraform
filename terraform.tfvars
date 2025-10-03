@@ -14,7 +14,7 @@ host_name = "tf03oct"
 host_domain = "idm.gbmcoelab.com"
 
 ip_address = "172.31.235.220"
-gateway    = "172.31.235.1"
+
 
 
 
