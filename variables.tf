@@ -81,4 +81,9 @@ variable "ip_address" {
   description = "Direccion IP de la Maquina"
   type = string
 }
+
+variable "gateway" {
+  description = "Dirección IPv4 del Gateway"
+  type        = string
+ }
 ## Datos de la customización de la Máquina Virtual ##
