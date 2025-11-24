@@ -52,7 +52,7 @@ resource "vsphere_virtual_machine" "vm" {
       template_uuid = data.vsphere_virtual_machine.template.id
       customize {
         windows_options {
-          computer_name: = var.host_name          
+          computer_name = var.host_name          
         }
         network_interface {
           ipv4_address = var.ip_address
@@ -62,6 +62,7 @@ resource "vsphere_virtual_machine" "vm" {
       }
      }
     }
+
 
 
 
