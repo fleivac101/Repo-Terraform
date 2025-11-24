@@ -51,7 +51,7 @@ resource "vsphere_virtual_machine" "vm" {
   clone {
       template_uuid = data.vsphere_virtual_machine.template.id
       customize {
-        linux_options {
+        windows_options {
           host_name = var.host_name
           domain    = var.host_domain
         }
@@ -63,4 +63,5 @@ resource "vsphere_virtual_machine" "vm" {
       }
      }
     }
+
 
