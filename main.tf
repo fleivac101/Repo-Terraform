@@ -53,7 +53,7 @@ resource "vsphere_virtual_machine" "vm" {
       customize {
         windows_options {
           host_name = var.host_name
-          domain    = var.host_domain
+          host_domain  = var.host_domain
         }
         network_interface {
           ipv4_address = var.ip_address
@@ -63,5 +63,6 @@ resource "vsphere_virtual_machine" "vm" {
       }
      }
     }
+
 
 
