@@ -10,11 +10,12 @@ disk_size_0 = "100"
 vm_name = "agenteterraform"
 cpu_number = "1"
 memory_amount = "4096"
-computer_name = "tf03oct"
+host_name = "tf03oct"
 host_domain = "gbmcoelab.com"
 
 ip_address = "172.31.235.220"
 gateway    = "172.31.235.1"
+
 
 
 
