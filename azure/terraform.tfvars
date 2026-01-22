@@ -1,1 +1,1 @@
-ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+ssh_public_key = "SHA256:MmuKHNeqv6tK0Q4wDsaQqVICvgxgKrpgpccWAo4KSDM gbm\fleiva@T490-FLeiva"
