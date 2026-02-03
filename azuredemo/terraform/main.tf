@@ -22,7 +22,7 @@ provider "azurerm" {
 # -----------------------------
 locals {
   # Región NO permitida (para demo de gobernanza)
-  location = "eastus"
+  location = "brazilsouth"
 
   # VM size NO permitido (GPU / alto costo)
   vm_size = "Standard_NC6s_v3"
