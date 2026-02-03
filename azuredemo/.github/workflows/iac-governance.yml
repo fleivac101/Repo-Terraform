@@ -1,0 +1,38 @@
+name: IaC Governance - Terraform Plan Gate
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/**"
+
+jobs:
+  terraform-plan-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init
+        working-directory: azuredemo/terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: azuredemo/terraform
+        run: |
+          terraform plan -out=tfplan
+          terraform show -json tfplan > tfplan.json
+
+      - name: Analyze Plan
+        run: python3 azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
