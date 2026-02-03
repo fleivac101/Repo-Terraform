@@ -7,9 +7,6 @@ on:
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
 
-permissions:
-  contents: read
-
 jobs:
   terraform-plan-gate:
     runs-on: ubuntu-latest
@@ -42,3 +39,11 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
           ARM_TENANT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
         run: terraform plan -out=tfplan
+
+      - name: Export plan to JSON
+        working-directory: azuredemo/terraform
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Analyze Terraform Plan (IaC Governance)
+        run: python azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
+
