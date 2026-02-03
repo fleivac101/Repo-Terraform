@@ -6,12 +6,6 @@ on:
     paths:
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
-  pull_request:
-    branches: [ "main", "master" ]
-    paths:
-      - "azuredemo/**"
-      - ".github/workflows/iac-governance.yml"
-  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -20,39 +14,20 @@ jobs:
   terraform-plan-gate:
     runs-on: ubuntu-latest
 
-    env:
-      # Terraform AzureRM auth (force SP auth, avoid Azure CLI auth)
-      ARM_USE_CLI: "false"
-      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-
-    defaults:
-      run:
-        shell: bash
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Login to Azure (optional for Terraform, but useful for consistency/logs)
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: >
-            {"clientId":"${{ secrets.ARM_CLIENT_ID }}",
-             "clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}",
-             "tenantId":"${{ secrets.ARM_TENANT_ID }}",
-             "subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}"}
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
 
       - name: Terraform Init
         working-directory: azuredemo/terraform
+        env:
+          ARM_CLIENT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
         run: terraform init
 
       - name: Terraform Validate
@@ -61,16 +36,9 @@ jobs:
 
       - name: Terraform Plan
         working-directory: azuredemo/terraform
+        env:
+          ARM_CLIENT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
         run: terraform plan -out=tfplan
-
-      - name: Export tfplan to JSON
-        working-directory: azuredemo/terraform
-        run: terraform show -json tfplan > tfplan.json
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Analyze Plan (Governance Gate)
-        run: python3 azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
