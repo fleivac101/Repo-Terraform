@@ -1,7 +1,7 @@
 import json
 import sys
 
-ALLOWED_REGIONS = {"eastus", "centralus"}  # ajusta a tu demo
+ALLOWED_REGIONS = {"eastus2", "centralus"}  # ajusta a tu demo
 BLOCKED_VM_PREFIXES = ("Standard_NC", "Standard_NV")  # GPU / costosas
 BLOCKED_VM_SIZES = {"Standard_D16s_v5"}  # ejemplo puntual si quieres
 
