@@ -2,21 +2,40 @@ name: IaC Governance - Terraform Plan Gate
 
 on:
   push:
-    branches:
-      - master
+    branches: [ "main", "master" ]
     paths:
       - "azuredemo/**"
-      - ".github/workflows/**"
+      - ".github/workflows/iac-governance.yml"
   pull_request:
-    branches:
-      - master
+    branches: [ "main", "master" ]
     paths:
       - "azuredemo/**"
-      - ".github/workflows/**"
+      - ".github/workflows/iac-governance.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 jobs:
   terraform-plan-gate:
+    name: terraform-plan-gate
     runs-on: ubuntu-latest
+
+    env:
+      # Terraform AzureRM auth (required)
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      # Optional: if later you enable Azure OpenAI in analyze_plan.py
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+      AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
@@ -24,21 +43,43 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-
-      - name: Azure Login
-        uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt (non-blocking)
+        working-directory: azuredemo/terraform
+        run: terraform fmt -check || true
 
       - name: Terraform Init
         working-directory: azuredemo/terraform
         run: terraform init
 
+      - name: Terraform Validate
+        working-directory: azuredemo/terraform
+        run: terraform validate
+
       - name: Terraform Plan
         working-directory: azuredemo/terraform
-        run: |
-          terraform plan -out=tfplan
-          terraform show -json tfplan > tfplan.json
+        run: terraform plan -out=tfplan
 
-      - name: Analyze Plan
+      - name: Export tfplan to JSON
+        working-directory: azuredemo/terraform
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Analyze Plan (Governance Gate)
         run: python3 azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
+
+      - name: Upload plan artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-artifacts
+          path: |
+            azuredemo/terraform/tfplan
+            azuredemo/terraform/tfplan.json
+
