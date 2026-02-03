@@ -1,0 +1,11 @@
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/**"
