@@ -7,6 +7,18 @@ on:
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
 
+  # ✅ Needed for Copilot / Power Automate trigger
+  workflow_dispatch:
+    inputs:
+      location:
+        description: "Azure location (eastus, westus2, brazil...)"
+        required: true
+        default: "eastus"
+      vm_size:
+        description: "VM size (optional)"
+        required: false
+        default: ""
+
 jobs:
   terraform-plan-gate:
     runs-on: ubuntu-latest
@@ -21,10 +33,10 @@ jobs:
       - name: Terraform Init
         working-directory: azuredemo/terraform
         env:
-          ARM_CLIENT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
-          ARM_TENANT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
         run: terraform init
 
       - name: Terraform Validate
@@ -34,11 +46,14 @@ jobs:
       - name: Terraform Plan
         working-directory: azuredemo/terraform
         env:
-          ARM_CLIENT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
-          ARM_TENANT_ID:     ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
-        run: terraform plan -out=tfplan
+          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
+        run: |
+          terraform plan -out=tfplan \
+            -var="location=${{ github.event.inputs.location || 'eastus' }}" \
+            -var="vm_size=${{ github.event.inputs.vm_size || '' }}"
 
       - name: Export plan to JSON
         working-directory: azuredemo/terraform
@@ -46,4 +61,3 @@ jobs:
 
       - name: Analyze Terraform Plan (IaC Governance)
         run: python azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
-
