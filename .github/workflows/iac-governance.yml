@@ -54,7 +54,8 @@ jobs:
           terraform plan -out=tfplan \
             -var="location=${{ github.event.inputs.location || 'eastus' }}" \
             -var="vm_size=${{ github.event.inputs.vm_size || '' }}"
-
+            -var='tags={"owner"="fabian","costCenter"="demo","environment"="dev","application"="iac-governance"}'
+      
       - name: Export plan to JSON
         working-directory: azuredemo/terraform
         run: terraform show -json tfplan > tfplan.json
