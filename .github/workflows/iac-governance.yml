@@ -1,4 +1,4 @@
-name: IaC Governance - Terraform Plan Gate
+name: iac-governance
 
 on:
   push:
@@ -7,17 +7,26 @@ on:
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
 
-  # ✅ Needed for Copilot / Power Automate trigger
+  pull_request:
+    branches: [ "main", "master" ]
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/iac-governance.yml"
+
   workflow_dispatch:
     inputs:
       location:
-        description: "Azure location (eastus, westus2, brazil...)"
+        description: "Azure location (example: eastus, westus2)"
         required: true
         default: "eastus"
       vm_size:
-        description: "VM size (optional)"
+        description: "VM size (example: Standard_B2s)"
+        required: true
+        default: "Standard_B2s"
+      break_tags:
+        description: "Set to true to intentionally fail governance by removing costCenter tag"
         required: false
-        default: ""
+        default: "false"
 
 jobs:
   terraform-plan-gate:
@@ -29,6 +38,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
 
       - name: Terraform Init
         working-directory: azuredemo/terraform
@@ -50,8 +61,21 @@ jobs:
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
           ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
-        run: terraform plan -out=tfplan -var="location=${{ inputs.location }}" -var="vm_size=${{ inputs.vm_size }}" -var='tags={"owner"="fabian","costCenter"="demo","environment"="dev","application"="iac-governance"}'
-      
+
+          # ✅ Works for push / PR / manual:
+          TF_VAR_location: ${{ github.event.inputs.location || 'eastus' }}
+          TF_VAR_vm_size: ${{ github.event.inputs.vm_size || 'Standard_B2s' }}
+
+          # ✅ Default tags (governance should PASS)
+          TF_VAR_tags: '{"owner":"fabian","costCenter":"demo","environment":"dev","application":"iac-governance"}'
+        run: |
+          # If you want to demonstrate a FAIL by missing costCenter:
+          if [ "${{ github.event.inputs.break_tags || 'false' }}" = "true" ]; then
+            echo 'TF_VAR_tags={"owner":"fabian","environment":"dev","application":"iac-governance"}' >> $GITHUB_ENV
+          fi
+
+          terraform plan -out=tfplan
+
       - name: Export plan to JSON
         working-directory: azuredemo/terraform
         run: terraform show -json tfplan > tfplan.json
