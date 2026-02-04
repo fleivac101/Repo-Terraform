@@ -13,5 +13,6 @@ variable "vm_size" {
 variable "tags" {
   description = "Mandatory resource tags"
   type        = map(string)
+  default     = {}
 }
 
