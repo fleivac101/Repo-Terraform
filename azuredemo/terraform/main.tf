@@ -38,7 +38,7 @@ resource "tls_private_key" "ssh" {
 # -----------------------------
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${local.prefix}"
-  location = local.location
+  location = var.location
 }
 
 # -----------------------------
