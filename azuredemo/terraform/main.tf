@@ -39,7 +39,7 @@ resource "tls_private_key" "ssh" {
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${local.prefix}"
   location = var.location
-  tags = var.tags
+  tags     = var.tags
 }
 
 # -----------------------------
@@ -50,6 +50,7 @@ resource "azurerm_virtual_network" "vnet" {
   address_space       = ["10.10.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  tags                = var.tags
 }
 
 resource "azurerm_subnet" "subnet" {
@@ -59,16 +60,31 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.10.1.0/24"]
 }
 
+# -----------------------------
+# DevSecOps demo: Public IP (RISK)
+# -----------------------------
+resource "azurerm_public_ip" "pip" {
+  name                = "pip-${local.prefix}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = var.tags
+}
+
 resource "azurerm_network_interface" "nic" {
   name                = "nic-${local.prefix}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  tags = var.tags
+  tags                = var.tags
 
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.subnet.id
     private_ip_address_allocation = "Dynamic"
+
+    # ✅ This is the insecure part for the demo (Public IP attached)
+    public_ip_address_id          = azurerm_public_ip.pip.id
   }
 }
 
@@ -79,8 +95,8 @@ resource "azurerm_linux_virtual_machine" "vm" {
   name                = "vm-${local.prefix}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  size                = var.vm_size != "" ? var.vm_size : "Standard_B2s"  # default “seguro”
-  tags = var.tags
+  size                = var.vm_size != "" ? var.vm_size : "Standard_B2s"
+  tags                = var.tags
 
   network_interface_ids = [
     azurerm_network_interface.nic.id
@@ -115,5 +131,9 @@ output "demo_region" {
 
 output "demo_vm_size" {
   value = azurerm_linux_virtual_machine.vm.size
+}
+
+output "demo_public_ip_id" {
+  value = azurerm_public_ip.pip.id
 }
 
