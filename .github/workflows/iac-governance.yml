@@ -50,11 +50,7 @@ jobs:
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
           ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
-        run: |
-          terraform plan -out=tfplan \
-            -var="location=${{ github.event.inputs.location || 'eastus' }}" \
-            -var="vm_size=${{ github.event.inputs.vm_size || '' }}"
-            -var='tags={"owner"="fabian","costCenter"="demo","environment"="dev","application"="iac-governance"}'
+        run: terraform plan -out=tfplan -var="location=${{ inputs.location }}" -var="vm_size=${{ inputs.vm_size }}" -var='tags={"owner"="fabian","costCenter"="demo","environment"="dev","application"="iac-governance"}'
       
       - name: Export plan to JSON
         working-directory: azuredemo/terraform
