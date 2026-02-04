@@ -46,18 +46,18 @@ def main():
 
     risk, findings = analyze_plan(plan)
 
-    print("\n================ IaC GOVERNANCE RESULT ================\n")
+    print("\n================ RESULTADO IaC GOVERNANCE  ================\n")
     print(f"🔐 Risk level: {risk}\n")
 
     if findings:
-        print("🚨 Policy violations detected:\n")
+        print("🚨 Policy violations Detectado:\n")
         for f in findings:
             print(f" - {f}")
-        print("\n❌ Terraform Plan BLOCKED by governance policy\n")
+        print("\n❌ Terraform Plan Bloqueado by governance policy\n")
         sys.exit(2)
 
     print("✅ No policy violations found")
-    print("✅ Terraform Plan APPROVED\n")
+    print("✅ Terraform Plan Aprobado\n")
 
 if __name__ == "__main__":
     main()
