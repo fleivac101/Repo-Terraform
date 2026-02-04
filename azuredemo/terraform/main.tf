@@ -21,12 +21,6 @@ provider "azurerm" {
 # Local demo configuration
 # -----------------------------
 locals {
-  # Región NO permitida (para demo de gobernanza)
-  location = "brazilsouth"
-
-  # VM size NO permitido (GPU / alto costo)
-  vm_size = "Standard_NC6s_v3"
-
   prefix = "iac-gov-demo"
 }
 
@@ -83,7 +77,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   name                = "vm-${local.prefix}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  size                = local.vm_size
+  size                = var.vm_size != "" ? var.vm_size : "Standard_B2s"  # default “seguro”
 
   network_interface_ids = [
     azurerm_network_interface.nic.id
