@@ -63,6 +63,7 @@ resource "azurerm_network_interface" "nic" {
   name                = "nic-${local.prefix}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  tags = var.tags
 
   ip_configuration {
     name                          = "ipconfig1"
