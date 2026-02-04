@@ -84,6 +84,18 @@ def analyze_plan(plan_json):
         tags = values.get("tags")
         if not validate_mandatory_tags(address, tags, findings):
             risk = "HIGH"
+            
+        # 4️⃣ Block Public IP association on NIC (DevSecOps)
+        if rtype == "azurerm_network_interface":
+        # ip_configuration can be a list
+            ip_configs = values.get("ip_configuration") or []
+            for cfg in ip_configs:
+            if cfg.get("public_ip_address_id"):
+                findings.append(
+                f"❌ Public IP not allowed → {address} has public_ip_address_id"
+            )
+            risk = "HIGH"
+
 
     return risk, findings
 
