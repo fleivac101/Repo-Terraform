@@ -1,8 +1,23 @@
 import json
 import sys
 
+# =======================
+# CONFIGURACIÓN POLICIES
+# =======================
+
 ALLOWED_REGIONS = ["eastus", "westus2"]
 BLOCKED_VM_SIZES = ["Standard_NC6_v3", "Standard_ND6s"]
+
+MANDATORY_TAGS = [
+    "owner",
+    "costCenter",
+    "environment",
+    "application"
+]
+
+# =======================
+# HELPERS
+# =======================
 
 def walk_modules(module):
     if not module:
@@ -12,33 +27,69 @@ def walk_modules(module):
     for child in module.get("child_modules", []):
         yield from walk_modules(child)
 
+def validate_mandatory_tags(resource_name, tags, findings):
+    if not tags:
+        findings.append(
+            f"❌ {resource_name} has NO tags defined (mandatory: {MANDATORY_TAGS})"
+        )
+        return False
+
+    missing = [
+        tag for tag in MANDATORY_TAGS
+        if tag not in tags or not tags[tag]
+    ]
+
+    if missing:
+        findings.append(
+            f"❌ {resource_name} is missing mandatory tags: {missing}"
+        )
+        return False
+
+    return True
+
+# =======================
+# MAIN ANALYSIS
+# =======================
+
 def analyze_plan(plan_json):
     findings = []
     risk = "LOW"
 
     planned = plan_json.get("planned_values", {}).get("root_module", {})
+
     for res in walk_modules(planned):
+        address = res.get("address", "")
         rtype = res.get("type", "")
         values = res.get("values", {}) or {}
 
-        # 1️⃣ Región no permitida
+        # 1️⃣ REGIÓN PERMITIDA
         location = (values.get("location") or "").lower()
         if location and location not in ALLOWED_REGIONS:
             findings.append(
-                f"❌ Disallowed region → {rtype} in '{location}' (allowed: {ALLOWED_REGIONS})"
+                f"❌ Disallowed region → {address} in '{location}' "
+                f"(allowed: {ALLOWED_REGIONS})"
             )
             risk = "HIGH"
 
-        # 2️⃣ VM size no permitida
+        # 2️⃣ VM SIZE BLOQUEADA
         if rtype in ["azurerm_linux_virtual_machine", "azurerm_windows_virtual_machine"]:
             size = values.get("size", "")
             if size in BLOCKED_VM_SIZES:
                 findings.append(
-                    f"❌ Disallowed VM size → {size} on {rtype}"
+                    f"❌ Disallowed VM size → {size} on {address}"
                 )
                 risk = "HIGH"
 
+        # 3️⃣ TAGS OBLIGATORIOS (IaC Governance)
+        tags = values.get("tags")
+        if not validate_mandatory_tags(address, tags, findings):
+            risk = "HIGH"
+
     return risk, findings
+
+# =======================
+# ENTRYPOINT
+# =======================
 
 def main():
     with open(sys.argv[1]) as f:
@@ -46,19 +97,18 @@ def main():
 
     risk, findings = analyze_plan(plan)
 
-    print("\n================ RESULTADO IaC GOVERNANCE  ================\n")
+    print("\n================ RESULTADO IaC GOVERNANCE ================\n")
     print(f"🔐 Risk level: {risk}\n")
 
     if findings:
-        print("🚨 Policy violations Detectado:\n")
+        print("🚨 Policy violations detected:\n")
         for f in findings:
             print(f" - {f}")
-        print("\n❌ Terraform Plan Bloqueado by governance policy\n")
+        print("\n❌ Terraform Plan BLOCKED by governance policies\n")
         sys.exit(2)
 
     print("✅ No policy violations found")
-    print("✅ Terraform Plan Aprobado\n")
+    print("✅ Terraform Plan APPROVED\n")
 
 if __name__ == "__main__":
     main()
-
