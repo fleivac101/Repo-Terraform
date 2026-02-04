@@ -15,6 +15,17 @@ MANDATORY_TAGS = [
     "application"
 ]
 
+# Solo recursos Azure que REALMENTE soportan tags
+TAGGABLE_TYPES = {
+    "azurerm_resource_group",
+    "azurerm_virtual_network",
+    "azurerm_network_interface",
+    "azurerm_linux_virtual_machine",
+    "azurerm_windows_virtual_machine",
+    "azurerm_network_security_group",
+    "azurerm_public_ip",
+}
+
 # =======================
 # HELPERS
 # =======================
@@ -81,21 +92,20 @@ def analyze_plan(plan_json):
                 risk = "HIGH"
 
         # 3️⃣ TAGS OBLIGATORIOS (IaC Governance)
-        tags = values.get("tags")
-        if not validate_mandatory_tags(address, tags, findings):
-            risk = "HIGH"
-            
-        # 4️⃣ Block Public IP association on NIC (DevSecOps)
+        if rtype in TAGGABLE_TYPES:
+            tags = values.get("tags")
+            if not validate_mandatory_tags(address, tags, findings):
+                risk = "HIGH"
+
+        # 4️⃣ DEVSECOPS — Bloquear Public IP en NIC
         if rtype == "azurerm_network_interface":
-        # ip_configuration can be a list
             ip_configs = values.get("ip_configuration") or []
             for cfg in ip_configs:
-            if cfg.get("public_ip_address_id"):
-                findings.append(
-                f"❌ Public IP not allowed → {address} has public_ip_address_id"
-            )
-            risk = "HIGH"
-
+                if cfg.get("public_ip_address_id"):
+                    findings.append(
+                        f"❌ Public IP not allowed → {address} has public_ip_address_id"
+                    )
+                    risk = "HIGH"
 
     return risk, findings
 
