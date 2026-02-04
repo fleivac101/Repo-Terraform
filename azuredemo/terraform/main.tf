@@ -39,6 +39,7 @@ resource "tls_private_key" "ssh" {
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${local.prefix}"
   location = var.location
+  tags = var.tags
 }
 
 # -----------------------------
@@ -78,6 +79,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   size                = var.vm_size != "" ? var.vm_size : "Standard_B2s"  # default “seguro”
+  tags = var.tags
 
   network_interface_ids = [
     azurerm_network_interface.nic.id
