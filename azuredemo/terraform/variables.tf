@@ -9,3 +9,9 @@ variable "vm_size" {
   description = "VM size"
   default     = ""
 }
+
+variable "tags" {
+  description = "Mandatory resource tags"
+  type        = map(string)
+}
+
