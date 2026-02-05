@@ -1,0 +1,79 @@
+name: drift-detection
+
+on:
+  schedule:
+    - cron: "0 12 * * *"   # diario 12:00 UTC (ajústalo si quieres)
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Terraform Init
+        working-directory: azuredemo/terraform
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
+        run: terraform init -input=false
+
+      - name: Terraform Plan (Drift Check)
+        id: driftplan
+        working-directory: azuredemo/terraform
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
+
+          TF_VAR_location: "eastus"
+          TF_VAR_vm_size: "Standard_B2s"
+          TF_VAR_tags: '{"owner":"fabian","costCenter":"demo","environment":"dev","application":"iac-governance"}'
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -no-color -out=tfplan
+          code=$?
+          echo "exitcode=$code" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Create Issue if Drift Detected
+        if: steps.driftplan.outputs.exitcode == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🚨 Drift detected in Azure (Terraform plan exitcode=2)`;
+            const body = [
+              `Terraform detected drift between desired state (repo) and actual infrastructure.`,
+              ``,
+              `**Next steps:**`,
+              `- Review the latest plan artifact/logs`,
+              `- Decide: revert manual change (apply) OR update code to match`,
+              ``,
+              `Workflow: ${context.workflow}`,
+              `Run: ${context.runId}`
+            ].join("\n");
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body
+            });
+
+      - name: Fail job on drift (optional)
+        if: steps.driftplan.outputs.exitcode == '2'
+        run: |
+          echo "Drift detected. Failing job to make it visible."
+          exit 2
