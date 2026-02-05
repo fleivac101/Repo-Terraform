@@ -54,6 +54,16 @@ jobs:
         working-directory: azuredemo/terraform
         run: terraform validate
 
+      # =========================
+      # ✅ Nivel 2: IaC Security Scan (Checkov)
+      # =========================
+      - name: Install Checkov
+        run: pip3 install checkov
+
+      # Opción demo: visible pero no bloquea (soft-fail)
+      - name: Checkov scan (IaC Security)
+        run: checkov -d azuredemo/terraform --soft-fail
+
       - name: Terraform Plan
         working-directory: azuredemo/terraform
         env:
