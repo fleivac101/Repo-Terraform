@@ -1,9 +1,32 @@
-name: IaC Governance – Terraform Plan Gate
+name: iac-governance
 
 on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/iac-governance.yml"
+
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
+    paths:
+      - "azuredemo/**"
+      - ".github/workflows/iac-governance.yml"
+
   workflow_dispatch:
+    inputs:
+      location:
+        description: "Azure location (example: eastus, westus2)"
+        required: true
+        default: "eastus"
+      vm_size:
+        description: "VM size (example: Standard_B2s)"
+        required: true
+        default: "Standard_B2s"
+      break_tags:
+        description: "Set to true to intentionally fail governance by removing costCenter tag"
+        required: false
+        default: "false"
 
 jobs:
   terraform-plan-gate:
@@ -14,105 +37,105 @@ jobs:
       pull-requests: write
       security-events: write
 
-    defaults:
-      run:
-        working-directory: azuredemo/terraform
-
     steps:
-    # -----------------------------
-    # Checkout
-    # -----------------------------
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # -----------------------------
-    # Setup Terraform
-    # -----------------------------
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: 1.6.6
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
 
-    # -----------------------------
-    # Terraform Init & Validate
-    # -----------------------------
-    - name: Terraform Init
-      run: terraform init -input=false
+      - name: Terraform Init
+        working-directory: azuredemo/terraform
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
+        run: terraform init
 
-    - name: Terraform Validate
-      run: terraform validate
+      - name: Terraform Validate
+        working-directory: azuredemo/terraform
+        run: terraform validate
 
-    # =====================================================
-    # NIVEL 2 – DevSecOps REAL (Security visible)
-    # =====================================================
+      # =========================
+      # ✅ Nivel 2: IaC Security Scan (Checkov)
+      # =========================
+      - name: Install Checkov
+        run: pip3 install checkov
 
-    - name: Install Checkov
-      run: pip3 install checkov
+      # 1) CLI output (para comentario en PR) - no bloquea
+      - name: Checkov scan (CLI output)
+        working-directory: azuredemo/terraform
+        run: |
+          set +e
+          checkov -d . --framework terraform > ../checkov.txt
+          exit 0
 
-    # --- Checkov CLI output (para PR comment)
-    - name: Checkov scan (IaC Security) - CLI
-      run: |
-        set +e
-        checkov -d . --framework terraform --quiet > checkov.txt
-        exit 0
+      # 2) SARIF válido (archivo)
+      - name: Checkov scan (SARIF)
+        working-directory: azuredemo/terraform
+        run: |
+          set +e
+          checkov -d . --framework terraform --output sarif --output-file-path checkov.sarif
+          exit 0
 
-    # --- Checkov SARIF (GitHub Security)
-     - name: Checkov scan (IaC Security) - SARIF
-       run: |
-         set +e
-         checkov -d . \
-           --framework terraform \
-           --output sarif \
-           --output-file-path checkov.sarif
-         exit 0
+      # 3) Upload SARIF (si falla, NO corta el pipeline)
+      - name: Upload Checkov SARIF
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: azuredemo/terraform/checkov.sarif
 
+      # 4) Comentario en el PR (si es PR) con salida legible
+      - name: Comment Checkov results on PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = fs.readFileSync('azuredemo/checkov.txt', 'utf8');
+            if (body.length > 60000) body = body.slice(0, 60000) + "\n...(truncated)";
+            const comment = [
+              "## 🔐 Checkov – IaC Security Scan",
+              "```",
+              body,
+              "```"
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: comment
+            });
 
-    - name: Upload Checkov SARIF
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: azuredemo/terraform/checkov.sarif
+      # =========================
+      # ✅ Nivel 1: Plan + Governance Gate
+      # =========================
+      - name: Terraform Plan
+        working-directory: azuredemo/terraform
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
 
-    - name: Comment Checkov results on PR
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          let body = fs.readFileSync('azuredemo/terraform/checkov.txt', 'utf8');
-          if (body.length > 60000) body = body.slice(0, 60000) + "\n...(truncated)";
-          const comment = [
-            "## 🔐 Checkov – IaC Security Scan",
-            "```",
-            body,
-            "```"
-          ].join("\n");
-          await github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.payload.pull_request.number,
-            body
-          });
+          TF_VAR_location: ${{ github.event.inputs.location || 'eastus' }}
+          TF_VAR_vm_size: ${{ github.event.inputs.vm_size || 'Standard_B2s' }}
+          TF_VAR_tags: '{"owner":"fabian","costCenter":"demo","environment":"dev","application":"iac-governance"}'
+        run: |
+          # Demo fail: quitar costCenter
+          if [ "${{ github.event.inputs.break_tags || 'false' }}" = "true" ]; then
+            echo 'TF_VAR_tags={"owner":"fabian","environment":"dev","application":"iac-governance"}' >> $GITHUB_ENV
+          fi
 
-    # =====================================================
-    # NIVEL 1 – Governance determinista (Plan gate)
-    # =====================================================
+          terraform plan -out=tfplan
 
-    - name: Terraform Plan
-      run: |
-        terraform plan \
-          -out=tfplan \
-          -var="location=westeurope" \
-          -var="vm_size=Standard_B2s" \
-          -var='tags={
-            owner="fabian",
-            costCenter="demo",
-            environment="dev",
-            application="iac-governance"
-          }'
+      - name: Export plan to JSON
+        working-directory: azuredemo/terraform
+        run: terraform show -json tfplan > tfplan.json
 
-    - name: Export plan to JSON
-      run: terraform show -json tfplan > tfplan.json
-
-    - name: Analyze Terraform Plan (IaC Governance)
-      run: |
-        python ../scripts/analyze_plan.py tfplan.json
+      - name: Analyze Terraform Plan (IaC Governance)
+        run: python azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
