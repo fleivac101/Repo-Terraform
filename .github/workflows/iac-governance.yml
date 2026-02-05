@@ -57,11 +57,15 @@ jobs:
         exit 0
 
     # --- Checkov SARIF (GitHub Security)
-    - name: Checkov scan (IaC Security) - SARIF
-      run: |
-        set +e
-        checkov -d . --framework terraform -o sarif > checkov.sarif
-        exit 0
+     - name: Checkov scan (IaC Security) - SARIF
+       run: |
+         set +e
+         checkov -d . \
+           --framework terraform \
+           --output sarif \
+           --output-file-path checkov.sarif
+         exit 0
+
 
     - name: Upload Checkov SARIF
       uses: github/codeql-action/upload-sarif@v3
