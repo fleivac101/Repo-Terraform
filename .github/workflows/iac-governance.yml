@@ -137,5 +137,57 @@ jobs:
         working-directory: azuredemo/terraform
         run: terraform show -json tfplan > tfplan.json
 
+      # =========================
+      # 🟢 OPCIÓN 1: Cost Estimation Gate (Infracost)
+      # =========================
+      - name: Install Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Run Infracost breakdown (from plan)
+        working-directory: azuredemo/terraform
+        run: |
+          infracost breakdown \
+            --path=tfplan.json \
+            --format=json \
+            --out-file=infracost.json
+
+      - name: Show cost summary
+        working-directory: azuredemo/terraform
+        run: |
+          infracost output \
+            --path=infracost.json \
+            --format=table
+
+      - name: Enforce cost policy
+        working-directory: azuredemo/terraform
+        env:
+          MAX_MONTHLY_USD: "50"
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          max_cost = float(os.environ.get("MAX_MONTHLY_USD","50"))
+          with open("infracost.json") as f:
+            data = json.load(f)
+
+          cost = data.get("totalMonthlyCost")
+          if cost is None:
+            print("⚠️ Could not read totalMonthlyCost from infracost.json; skipping policy.")
+            sys.exit(0)
+
+          cost = float(cost)
+          print(f"Monthly cost estimate: ${cost:.2f} (max allowed ${max_cost:.2f})")
+
+          if cost > max_cost:
+            print(f"❌ Cost exceeds allowed threshold ({max_cost} USD)")
+            sys.exit(1)
+
+          print("✅ Cost policy passed")
+          PY
+
+      # =========================
+      # ✅ Análisis de gobierno (tu script)
+      # =========================
       - name: Analyze Terraform Plan (IaC Governance)
         run: python azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
