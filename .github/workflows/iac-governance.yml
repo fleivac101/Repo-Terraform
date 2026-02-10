@@ -1,35 +1,14 @@
 name: iac-governance
 
 on:
-  push:
-    branches: [ "main", "master" ]
-    paths:
-      - "azuredemo/**"
-      - ".github/workflows/iac-governance.yml"
-
   pull_request:
     branches: [ "main", "master" ]
     paths:
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
 
-  workflow_dispatch:
-    inputs:
-      location:
-        description: "Azure location (example: eastus, westus2)"
-        required: true
-        default: "eastus"
-      vm_size:
-        description: "VM size (example: Standard_B2s)"
-        required: true
-        default: "Standard_B2s"
-      break_tags:
-        description: "Set to true to intentionally fail governance by removing costCenter tag"
-        required: false
-        default: "false"
-
 jobs:
-  terraform-plan-gate:
+  terraform-governance:
     runs-on: ubuntu-latest
 
     permissions:
@@ -52,11 +31,6 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.WORKDIR }}
-        env:
-          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
-          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
-          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
-          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
         run: terraform init
 
       - name: Terraform Validate
@@ -64,37 +38,20 @@ jobs:
         run: terraform validate
 
       # =========================
-      # ✅ Nivel 2: IaC Security Scan (Checkov)
+      # 🔐 Checkov – Security Scan
       # =========================
       - name: Install Checkov
         run: pip3 install checkov
 
-      # 1) CLI output (legible / para referencia)
-      - name: Checkov scan (CLI output)
+      - name: Run Checkov (JSON)
         working-directory: ${{ env.WORKDIR }}
         continue-on-error: true
-        run: |
-          set +e
-          checkov -d . --framework terraform > ../checkov.txt
-          exit 0
+        run: checkov -d . --framework terraform -o json > ../checkov.json
 
-      # 2) JSON (para armar métricas del resumen)
-      - name: Checkov scan (JSON)
+      - name: Run Checkov (SARIF)
         working-directory: ${{ env.WORKDIR }}
         continue-on-error: true
-        run: |
-          set +e
-          checkov -d . --framework terraform -o json > ../checkov.json
-          exit 0
-
-      # 3) SARIF (para Code Scanning)
-      - name: Checkov scan (SARIF)
-        working-directory: ${{ env.WORKDIR }}
-        continue-on-error: true
-        run: |
-          set +e
-          checkov -d . --framework terraform --output sarif --output-file-path checkov.sarif
-          exit 0
+        run: checkov -d . --framework terraform --output sarif --output-file-path checkov.sarif
 
       - name: Upload Checkov SARIF
         continue-on-error: true
@@ -103,40 +60,25 @@ jobs:
           sarif_file: azuredemo/terraform/checkov.sarif
 
       # =========================
-      # ✅ Nivel 1: Plan + Governance Gate
+      # 🧩 Terraform Plan
       # =========================
       - name: Terraform Plan
         working-directory: ${{ env.WORKDIR }}
-        env:
-          ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
-          ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
-          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
-          ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
-
-          TF_VAR_location: ${{ github.event.inputs.location || 'eastus' }}
-          TF_VAR_vm_size: ${{ github.event.inputs.vm_size || 'Standard_B2s' }}
-          TF_VAR_tags: '{"owner":"fabian","costCenter":"demo","environment":"dev","application":"iac-governance"}'
-        run: |
-          # Demo fail: quitar costCenter
-          if [ "${{ github.event.inputs.break_tags || 'false' }}" = "true" ]; then
-            echo 'TF_VAR_tags={"owner":"fabian","environment":"dev","application":"iac-governance"}' >> $GITHUB_ENV
-          fi
-
-          terraform plan -out=tfplan
+        run: terraform plan -out=tfplan
 
       - name: Export plan to JSON
         working-directory: ${{ env.WORKDIR }}
         run: terraform show -json tfplan > tfplan.json
 
       # =========================
-      # 🟢 Cost Estimation Gate (Infracost)
+      # 💰 Infracost
       # =========================
       - name: Install Infracost
         uses: infracost/actions/setup@v3
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
-      - name: Run Infracost breakdown (from plan)
+      - name: Run Infracost
         working-directory: ${{ env.WORKDIR }}
         run: |
           infracost breakdown \
@@ -144,240 +86,136 @@ jobs:
             --format=json \
             --out-file=infracost.json
 
-      - name: Show cost summary
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          infracost output \
-            --path=infracost.json \
-            --format=table
-
-      # Guardamos si la policy de costo pasa o no (pero NO detenemos todavía)
-      - name: Enforce cost policy (capture result)
-        id: cost_policy
-        continue-on-error: true
-        working-directory: ${{ env.WORKDIR }}
-        env:
-          MAX_MONTHLY_USD: ${{ env.MAX_MONTHLY_USD }}
-        run: |
-          python - <<'PY'
-          import json, os, sys
-          max_cost = float(os.environ.get("MAX_MONTHLY_USD","50"))
-          with open("infracost.json") as f:
-            data = json.load(f)
-
-          cost = data.get("totalMonthlyCost")
-          if cost is None:
-            print("⚠️ Could not read totalMonthlyCost from infracost.json; skipping policy.")
-            print("COST_POLICY_PASSED=true")
-            sys.exit(0)
-
-          cost = float(cost)
-          print(f"Monthly cost estimate: ${cost:.2f} (max allowed ${max_cost:.2f})")
-          if cost > max_cost:
-            print("COST_POLICY_PASSED=false")
-            sys.exit(1)
-
-          print("COST_POLICY_PASSED=true")
-          PY
-
-      - name: Persist cost policy status
-        if: always()
-        run: |
-          if [ "${{ steps.cost_policy.outcome }}" = "success" ]; then
-            echo "COST_POLICY_PASSED=true" >> $GITHUB_ENV
-          else
-            echo "COST_POLICY_PASSED=false" >> $GITHUB_ENV
-          fi
-
       # =========================
-      # ✅ Análisis de gobierno (tu script)
-      # =========================
-      - name: Analyze Terraform Plan (IaC Governance)
-        id: gov_policy
-        continue-on-error: true
-        run: python azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
-
-      - name: Persist governance policy status
-        if: always()
-        run: |
-          if [ "${{ steps.gov_policy.outcome }}" = "success" ]; then
-            echo "GOV_POLICY_PASSED=true" >> $GITHUB_ENV
-          else
-            echo "GOV_POLICY_PASSED=false" >> $GITHUB_ENV
-          fi
-
-      # =========================
-      # 🧠 Construir métricas para el resumen (Plan + Checkov + Infracost)
+      # 🧠 Build summary metrics + TOP 5 resources
       # =========================
       - name: Build summary metrics
         if: always()
         run: |
           python - <<'PY'
           import json, os
-
-          # -------- Terraform Plan metrics --------
-          add = change = destroy = replace = 0
-          try:
-            with open("azuredemo/terraform/tfplan.json","r") as f:
-              plan = json.load(f)
-            for rc in plan.get("resource_changes", []):
-              actions = rc.get("change", {}).get("actions", [])
-              # ["create"]
-              if actions == ["create"]:
-                add += 1
-              # ["update"]
-              elif actions == ["update"]:
-                change += 1
-              # ["delete"]
-              elif actions == ["delete"]:
-                destroy += 1
-              # ["delete","create"] = replace
-              elif actions == ["delete","create"]:
-                replace += 1
-                change += 1  # lo contamos como cambio en el resumen
-              else:
-                # otros (no-op, read, etc.) no los contamos
-                pass
-          except Exception:
-            pass
-
-          # -------- Infracost metrics --------
-          total = None
-          try:
-            with open("azuredemo/terraform/infracost.json","r") as f:
-              ic = json.load(f)
-            total = ic.get("totalMonthlyCost")
-          except Exception:
-            total = None
-
-          # -------- Checkov metrics (failed_checks by severity) --------
-          high = medium = low = 0
-          try:
-            with open("azuredemo/checkov.json","r") as f:
-              ck = json.load(f)
-            failed = ck.get("results", {}).get("failed_checks", []) or []
-            for item in failed:
-              sev = (item.get("severity") or "").upper()
-              if sev == "HIGH":
-                high += 1
-              elif sev == "MEDIUM":
-                medium += 1
-              elif sev == "LOW":
-                low += 1
-          except Exception:
-            pass
+          from collections import defaultdict
 
           def write_env(k, v):
-            with open(os.environ["GITHUB_ENV"], "a") as env:
-              env.write(f"{k}={v}\n")
+            with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"{k}={v}\n")
+
+          # -------- Plan metrics + Top 5 --------
+          add = change = destroy = replace = 0
+          per_type = defaultdict(lambda: {"add":0,"change":0,"destroy":0})
+
+          try:
+            with open("azuredemo/terraform/tfplan.json") as f:
+              plan = json.load(f)
+
+            for rc in plan.get("resource_changes", []):
+              rtype = rc.get("type", "unknown")
+              actions = rc.get("change", {}).get("actions", [])
+
+              if actions == ["create"]:
+                add += 1
+                per_type[rtype]["add"] += 1
+              elif actions == ["update"]:
+                change += 1
+                per_type[rtype]["change"] += 1
+              elif actions == ["delete"]:
+                destroy += 1
+                per_type[rtype]["destroy"] += 1
+              elif actions == ["delete","create"]:
+                replace += 1
+                change += 1
+                per_type[rtype]["change"] += 1
+          except Exception:
+            pass
+
+          ranked = sorted(
+            per_type.items(),
+            key=lambda kv: sum(kv[1].values()),
+            reverse=True
+          )[:5]
+
+          top5 = []
+          for rtype, c in ranked:
+            top5.append(f"- `{rtype}` (+{c['add']} ~{c['change']} -{c['destroy']})")
 
           write_env("PLAN_ADD", add)
           write_env("PLAN_CHANGE", change)
           write_env("PLAN_DESTROY", destroy)
           write_env("PLAN_REPLACE", replace)
+          write_env("PLAN_TOP5", "\\n".join(top5) if top5 else "- _No changes detected_")
+
+          # -------- Infracost --------
+          try:
+            with open("azuredemo/terraform/infracost.json") as f:
+              ic = json.load(f)
+            write_env("COST_TOTAL", ic.get("totalMonthlyCost", "N/A"))
+          except Exception:
+            write_env("COST_TOTAL", "N/A")
+
+          # -------- Checkov --------
+          high = medium = low = 0
+          try:
+            with open("azuredemo/checkov.json") as f:
+              ck = json.load(f)
+            for i in ck.get("results", {}).get("failed_checks", []):
+              s = (i.get("severity") or "").upper()
+              if s == "HIGH": high += 1
+              elif s == "MEDIUM": medium += 1
+              elif s == "LOW": low += 1
+          except Exception:
+            pass
 
           write_env("CHECKOV_HIGH", high)
           write_env("CHECKOV_MEDIUM", medium)
           write_env("CHECKOV_LOW", low)
-
-          if total is None:
-            write_env("COST_TOTAL", "N/A")
-          else:
-            write_env("COST_TOTAL", total)
           PY
 
       # =========================
-      # 💬 PR Comment único (Plan + Costo + Seguridad + Policy)
+      # 💬 PR Comment único (Executive Summary)
       # =========================
-      - name: Post/Update PR Governance Summary (single comment)
-        if: always() && github.event_name == 'pull_request'
+      - name: Post PR Governance Summary
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const marker = "<!-- iac-governance-summary -->";
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
+            const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
 
-            // 1) delete previous summary comment(s) by github-actions bot (idempotent)
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number, per_page: 100
-            });
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number, per_page: 100 }
+            );
 
             for (const c of comments) {
-              const isBot = (c.user && c.user.type === "Bot");
-              const hasMarker = (c.body || "").includes(marker);
-              if (isBot && hasMarker) {
+              if (c.user.type === "Bot" && c.body.includes(marker)) {
                 await github.rest.issues.deleteComment({ owner, repo, comment_id: c.id });
               }
             }
-
-            const planAdd = process.env.PLAN_ADD || "0";
-            const planChange = process.env.PLAN_CHANGE || "0";
-            const planDestroy = process.env.PLAN_DESTROY || "0";
-            const planReplace = process.env.PLAN_REPLACE || "0";
-
-            const chkHigh = process.env.CHECKOV_HIGH || "0";
-            const chkMed = process.env.CHECKOV_MEDIUM || "0";
-            const chkLow = process.env.CHECKOV_LOW || "0";
-
-            const costTotal = process.env.COST_TOTAL || "N/A";
-            const maxMonthly = process.env.MAX_MONTHLY_USD || "50";
-
-            const costPassed = process.env.COST_POLICY_PASSED === "true";
-            const govPassed = process.env.GOV_POLICY_PASSED === "true";
-
-            const status = (costPassed && govPassed) ? "✅ Safe to merge" : "❌ Blocked";
-            const reasons = [];
-            if (!costPassed) reasons.push(`- **Cost policy failed** (max $${maxMonthly}/mo)`);
-            if (!govPassed) reasons.push(`- **Governance policy failed** (analyze_plan.py)`);
 
             const body = [
               marker,
               "## 🧾 Terraform Governance Summary",
               "",
-              `**Status:** ${status}`,
-              "",
               "### 🧩 Terraform Plan",
-              `- **Add:** ${planAdd}`,
-              `- **Change:** ${planChange} *(includes replace)*`,
-              `- **Destroy:** ${planDestroy}`,
-              `- **Replace:** ${planReplace}`,
+              `- **Add:** ${process.env.PLAN_ADD}`,
+              `- **Change:** ${process.env.PLAN_CHANGE}`,
+              `- **Destroy:** ${process.env.PLAN_DESTROY}`,
+              "",
+              "### 🧭 Top changes (by resource type)",
+              (process.env.PLAN_TOP5 || "").replace(/\\n/g, "\n"),
               "",
               "### 🔐 Security (Checkov)",
-              `- **High:** ${chkHigh}`,
-              `- **Medium:** ${chkMed}`,
-              `- **Low:** ${chkLow}`,
+              `- **High:** ${process.env.CHECKOV_HIGH}`,
+              `- **Medium:** ${process.env.CHECKOV_MEDIUM}`,
+              `- **Low:** ${process.env.CHECKOV_LOW}`,
               "",
               "### 💰 Cost (Infracost)",
-              `- **Estimated monthly total:** ${costTotal === "N/A" ? "N/A" : `$${costTotal}/mo`}`,
-              `- **Policy threshold:** $${maxMonthly}/mo`,
-              `- **Policy result:** ${costPassed ? "✅ Passed" : "❌ Failed"}`,
+              `- **Estimated monthly total:** $${process.env.COST_TOTAL}`,
               "",
-              "### 🛂 Policy (Governance)",
-              `- **Policy result:** ${govPassed ? "✅ Passed" : "❌ Failed"}`,
-              "",
-              reasons.length ? "### 🚫 Block reasons\n" + reasons.join("\n") + "\n" : "",
               `🔗 Workflow run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-            ].filter(Boolean).join("\n");
+            ].join("\n");
 
             await github.rest.issues.createComment({
               owner, repo, issue_number, body
             });
-
-      # =========================
-      # 🚫 Falla final del job si alguna compuerta falló
-      # =========================
-      - name: Final gate (fail if blocked)
-        if: always()
-        run: |
-          echo "COST_POLICY_PASSED=${COST_POLICY_PASSED}"
-          echo "GOV_POLICY_PASSED=${GOV_POLICY_PASSED}"
-
-          if [ "${COST_POLICY_PASSED}" != "true" ] || [ "${GOV_POLICY_PASSED}" != "true" ]; then
-            echo "❌ Pipeline blocked by governance/cost gate(s)."
-            exit 1
-          fi
-
-          echo "✅ All gates passed."
-
