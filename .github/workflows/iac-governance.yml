@@ -71,7 +71,7 @@ jobs:
         run: terraform show -json tfplan > tfplan.json
 
       # =========================
-      # 💰 Infracost
+      # 💰 Infracost.io
       # =========================
       - name: Install Infracost
         uses: infracost/actions/setup@v3
