@@ -37,6 +37,10 @@ jobs:
       pull-requests: write
       security-events: write
 
+    env:
+      WORKDIR: azuredemo/terraform
+      MAX_MONTHLY_USD: "50"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +51,7 @@ jobs:
           terraform_version: 1.6.6
 
       - name: Terraform Init
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
@@ -56,7 +60,7 @@ jobs:
         run: terraform init
 
       - name: Terraform Validate
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
         run: terraform validate
 
       # =========================
@@ -65,57 +69,44 @@ jobs:
       - name: Install Checkov
         run: pip3 install checkov
 
-      # 1) CLI output (para comentario en PR) - no bloquea
+      # 1) CLI output (legible / para referencia)
       - name: Checkov scan (CLI output)
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
+        continue-on-error: true
         run: |
           set +e
           checkov -d . --framework terraform > ../checkov.txt
           exit 0
 
-      # 2) SARIF válido (archivo)
+      # 2) JSON (para armar métricas del resumen)
+      - name: Checkov scan (JSON)
+        working-directory: ${{ env.WORKDIR }}
+        continue-on-error: true
+        run: |
+          set +e
+          checkov -d . --framework terraform -o json > ../checkov.json
+          exit 0
+
+      # 3) SARIF (para Code Scanning)
       - name: Checkov scan (SARIF)
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
+        continue-on-error: true
         run: |
           set +e
           checkov -d . --framework terraform --output sarif --output-file-path checkov.sarif
           exit 0
 
-      # 3) Upload SARIF (si falla, NO corta el pipeline)
       - name: Upload Checkov SARIF
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: azuredemo/terraform/checkov.sarif
 
-      # 4) Comentario en el PR (si es PR) con salida legible
-      - name: Comment Checkov results on PR
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            let body = fs.readFileSync('azuredemo/checkov.txt', 'utf8');
-            if (body.length > 60000) body = body.slice(0, 60000) + "\n...(truncated)";
-            const comment = [
-              "## 🔐 Checkov – IaC Security Scan",
-              "```",
-              body,
-              "```"
-            ].join("\n");
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: comment
-            });
-
       # =========================
       # ✅ Nivel 1: Plan + Governance Gate
       # =========================
       - name: Terraform Plan
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
@@ -134,11 +125,11 @@ jobs:
           terraform plan -out=tfplan
 
       - name: Export plan to JSON
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
         run: terraform show -json tfplan > tfplan.json
 
       # =========================
-      # 🟢 OPCIÓN 1: Cost Estimation Gate (Infracost)
+      # 🟢 Cost Estimation Gate (Infracost)
       # =========================
       - name: Install Infracost
         uses: infracost/actions/setup@v3
@@ -146,7 +137,7 @@ jobs:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
       - name: Run Infracost breakdown (from plan)
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
         run: |
           infracost breakdown \
             --path=tfplan.json \
@@ -154,16 +145,19 @@ jobs:
             --out-file=infracost.json
 
       - name: Show cost summary
-        working-directory: azuredemo/terraform
+        working-directory: ${{ env.WORKDIR }}
         run: |
           infracost output \
             --path=infracost.json \
             --format=table
 
-      - name: Enforce cost policy
-        working-directory: azuredemo/terraform
+      # Guardamos si la policy de costo pasa o no (pero NO detenemos todavía)
+      - name: Enforce cost policy (capture result)
+        id: cost_policy
+        continue-on-error: true
+        working-directory: ${{ env.WORKDIR }}
         env:
-          MAX_MONTHLY_USD: "50"
+          MAX_MONTHLY_USD: ${{ env.MAX_MONTHLY_USD }}
         run: |
           python - <<'PY'
           import json, os, sys
@@ -174,20 +168,216 @@ jobs:
           cost = data.get("totalMonthlyCost")
           if cost is None:
             print("⚠️ Could not read totalMonthlyCost from infracost.json; skipping policy.")
+            print("COST_POLICY_PASSED=true")
             sys.exit(0)
 
           cost = float(cost)
           print(f"Monthly cost estimate: ${cost:.2f} (max allowed ${max_cost:.2f})")
-
           if cost > max_cost:
-            print(f"❌ Cost exceeds allowed threshold ({max_cost} USD)")
+            print("COST_POLICY_PASSED=false")
             sys.exit(1)
 
-          print("✅ Cost policy passed")
+          print("COST_POLICY_PASSED=true")
           PY
+
+      - name: Persist cost policy status
+        if: always()
+        run: |
+          if [ "${{ steps.cost_policy.outcome }}" = "success" ]; then
+            echo "COST_POLICY_PASSED=true" >> $GITHUB_ENV
+          else
+            echo "COST_POLICY_PASSED=false" >> $GITHUB_ENV
+          fi
 
       # =========================
       # ✅ Análisis de gobierno (tu script)
       # =========================
       - name: Analyze Terraform Plan (IaC Governance)
+        id: gov_policy
+        continue-on-error: true
         run: python azuredemo/scripts/analyze_plan.py azuredemo/terraform/tfplan.json
+
+      - name: Persist governance policy status
+        if: always()
+        run: |
+          if [ "${{ steps.gov_policy.outcome }}" = "success" ]; then
+            echo "GOV_POLICY_PASSED=true" >> $GITHUB_ENV
+          else
+            echo "GOV_POLICY_PASSED=false" >> $GITHUB_ENV
+          fi
+
+      # =========================
+      # 🧠 Construir métricas para el resumen (Plan + Checkov + Infracost)
+      # =========================
+      - name: Build summary metrics
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+
+          # -------- Terraform Plan metrics --------
+          add = change = destroy = replace = 0
+          try:
+            with open("azuredemo/terraform/tfplan.json","r") as f:
+              plan = json.load(f)
+            for rc in plan.get("resource_changes", []):
+              actions = rc.get("change", {}).get("actions", [])
+              # ["create"]
+              if actions == ["create"]:
+                add += 1
+              # ["update"]
+              elif actions == ["update"]:
+                change += 1
+              # ["delete"]
+              elif actions == ["delete"]:
+                destroy += 1
+              # ["delete","create"] = replace
+              elif actions == ["delete","create"]:
+                replace += 1
+                change += 1  # lo contamos como cambio en el resumen
+              else:
+                # otros (no-op, read, etc.) no los contamos
+                pass
+          except Exception:
+            pass
+
+          # -------- Infracost metrics --------
+          total = None
+          try:
+            with open("azuredemo/terraform/infracost.json","r") as f:
+              ic = json.load(f)
+            total = ic.get("totalMonthlyCost")
+          except Exception:
+            total = None
+
+          # -------- Checkov metrics (failed_checks by severity) --------
+          high = medium = low = 0
+          try:
+            with open("azuredemo/checkov.json","r") as f:
+              ck = json.load(f)
+            failed = ck.get("results", {}).get("failed_checks", []) or []
+            for item in failed:
+              sev = (item.get("severity") or "").upper()
+              if sev == "HIGH":
+                high += 1
+              elif sev == "MEDIUM":
+                medium += 1
+              elif sev == "LOW":
+                low += 1
+          except Exception:
+            pass
+
+          def write_env(k, v):
+            with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"{k}={v}\n")
+
+          write_env("PLAN_ADD", add)
+          write_env("PLAN_CHANGE", change)
+          write_env("PLAN_DESTROY", destroy)
+          write_env("PLAN_REPLACE", replace)
+
+          write_env("CHECKOV_HIGH", high)
+          write_env("CHECKOV_MEDIUM", medium)
+          write_env("CHECKOV_LOW", low)
+
+          if total is None:
+            write_env("COST_TOTAL", "N/A")
+          else:
+            write_env("COST_TOTAL", total)
+          PY
+
+      # =========================
+      # 💬 PR Comment único (Plan + Costo + Seguridad + Policy)
+      # =========================
+      - name: Post/Update PR Governance Summary (single comment)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "<!-- iac-governance-summary -->";
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            // 1) delete previous summary comment(s) by github-actions bot (idempotent)
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100
+            });
+
+            for (const c of comments) {
+              const isBot = (c.user && c.user.type === "Bot");
+              const hasMarker = (c.body || "").includes(marker);
+              if (isBot && hasMarker) {
+                await github.rest.issues.deleteComment({ owner, repo, comment_id: c.id });
+              }
+            }
+
+            const planAdd = process.env.PLAN_ADD || "0";
+            const planChange = process.env.PLAN_CHANGE || "0";
+            const planDestroy = process.env.PLAN_DESTROY || "0";
+            const planReplace = process.env.PLAN_REPLACE || "0";
+
+            const chkHigh = process.env.CHECKOV_HIGH || "0";
+            const chkMed = process.env.CHECKOV_MEDIUM || "0";
+            const chkLow = process.env.CHECKOV_LOW || "0";
+
+            const costTotal = process.env.COST_TOTAL || "N/A";
+            const maxMonthly = process.env.MAX_MONTHLY_USD || "50";
+
+            const costPassed = process.env.COST_POLICY_PASSED === "true";
+            const govPassed = process.env.GOV_POLICY_PASSED === "true";
+
+            const status = (costPassed && govPassed) ? "✅ Safe to merge" : "❌ Blocked";
+            const reasons = [];
+            if (!costPassed) reasons.push(`- **Cost policy failed** (max $${maxMonthly}/mo)`);
+            if (!govPassed) reasons.push(`- **Governance policy failed** (analyze_plan.py)`);
+
+            const body = [
+              marker,
+              "## 🧾 Terraform Governance Summary",
+              "",
+              `**Status:** ${status}`,
+              "",
+              "### 🧩 Terraform Plan",
+              `- **Add:** ${planAdd}`,
+              `- **Change:** ${planChange} *(includes replace)*`,
+              `- **Destroy:** ${planDestroy}`,
+              `- **Replace:** ${planReplace}`,
+              "",
+              "### 🔐 Security (Checkov)",
+              `- **High:** ${chkHigh}`,
+              `- **Medium:** ${chkMed}`,
+              `- **Low:** ${chkLow}`,
+              "",
+              "### 💰 Cost (Infracost)",
+              `- **Estimated monthly total:** ${costTotal === "N/A" ? "N/A" : `$${costTotal}/mo`}`,
+              `- **Policy threshold:** $${maxMonthly}/mo`,
+              `- **Policy result:** ${costPassed ? "✅ Passed" : "❌ Failed"}`,
+              "",
+              "### 🛂 Policy (Governance)",
+              `- **Policy result:** ${govPassed ? "✅ Passed" : "❌ Failed"}`,
+              "",
+              reasons.length ? "### 🚫 Block reasons\n" + reasons.join("\n") + "\n" : "",
+              `🔗 Workflow run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+            ].filter(Boolean).join("\n");
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number, body
+            });
+
+      # =========================
+      # 🚫 Falla final del job si alguna compuerta falló
+      # =========================
+      - name: Final gate (fail if blocked)
+        if: always()
+        run: |
+          echo "COST_POLICY_PASSED=${COST_POLICY_PASSED}"
+          echo "GOV_POLICY_PASSED=${GOV_POLICY_PASSED}"
+
+          if [ "${COST_POLICY_PASSED}" != "true" ] || [ "${GOV_POLICY_PASSED}" != "true" ]; then
+            echo "❌ Pipeline blocked by governance/cost gate(s)."
+            exit 1
+          fi
+
+          echo "✅ All gates passed."
+
