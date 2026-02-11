@@ -4,8 +4,18 @@ on:
   pull_request:
     branches: [ "main", "master" ]
     paths:
+      - "azure/**"
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
+
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - "azure/**"
+      - "azuredemo/**"
+      - ".github/workflows/iac-governance.yml"
+
+  workflow_dispatch: {}
 
 jobs:
   terraform-governance:
