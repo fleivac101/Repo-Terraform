@@ -14,7 +14,30 @@ on:
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
 
-  workflow_dispatch: {}
+  workflow_dispatch:
+  inputs:
+    location:
+      description: "Azure Region"
+      required: true
+      default: "eastus"
+      type: choice
+      options:
+        - eastus
+        - eastus2
+        - westus
+        - centralus
+
+    vm_size:
+      description: "Virtual Machine Size"
+      required: true
+      default: "Standard_B2s"
+      type: choice
+      options:
+        - Standard_B1s
+        - Standard_B2s
+        - Standard_D2s_v3
+        - Standard_D4s_v3
+
 
 jobs:
   terraform-governance:
