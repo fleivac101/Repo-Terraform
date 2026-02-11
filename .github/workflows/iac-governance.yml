@@ -11,7 +11,6 @@ on:
   push:
     branches: [ "main", "master" ]
     paths:
-      - "azure/**"
       - "azuredemo/**"
       - ".github/workflows/iac-governance.yml"
 
