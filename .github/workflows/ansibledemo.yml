@@ -15,19 +15,19 @@ jobs:
 
       # --- (OPCIONAL) Terraform ---
       # Si querés solo probar AAP, comenta estos steps.
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.7.5
+      #- name: Setup Terraform
+        #uses: hashicorp/setup-terraform@v3
+       # with:
+        #  terraform_version: 1.7.5
 
-      - name: Terraform Init
-        run: terraform init
+      #- name: Terraform Init
+       # run: terraform init
 
-      - name: Terraform Plan
-        run: terraform plan -out=tfplan
+      #- name: Terraform Plan
+     #   run: terraform plan -out=tfplan
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
+    #  - name: Terraform Apply
+   #     run: terraform apply -auto-approve tfplan 
       # --- fin Terraform ---
 
       - name: Launch AAP Workflow Job Template
