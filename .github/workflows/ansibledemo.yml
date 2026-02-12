@@ -1,0 +1,117 @@
+name: Terraform + Launch AAP Workflow (WFJT 29)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- (OPCIONAL) Terraform ---
+      # Si querés solo probar AAP, comenta estos steps.
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+      # --- fin Terraform ---
+
+      - name: Launch AAP Workflow Job Template
+        id: launch
+        env:
+          AAP_URL: ${{ secrets.AAP_URL }}
+          AAP_TOKEN: ${{ secrets.AAP_TOKEN }}
+          WF_ID: ${{ secrets.AAP_WF_TEMPLATE_ID }}
+        run: |
+          set -euo pipefail
+
+          # Extra vars (opcional). Si no necesitás, dejalo vacío.
+          EXTRA_VARS='{}'
+
+          echo "Launching AAP Workflow Job Template ID: ${WF_ID}"
+
+          RESP=$(curl --globoff -sS -k -X POST \
+            "${AAP_URL}/api/controller/v2/workflow_job_templates/${WF_ID}/launch/" \
+            -H "Authorization: Bearer ${AAP_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"extra_vars\": ${EXTRA_VARS}}" )
+
+          echo "$RESP" > aap-launch.json
+          echo "Launch response:"
+          cat aap-launch.json
+
+          WF_JOB_ID=$(python3 - << 'PY'
+import json
+d=json.load(open("aap-launch.json"))
+print(d.get("workflow_job") or d.get("id") or "")
+PY
+          )
+
+          if [ -z "$WF_JOB_ID" ]; then
+            echo "Could not read workflow job id from response."
+            exit 1
+          fi
+
+          echo "WF_JOB_ID=$WF_JOB_ID" >> $GITHUB_ENV
+          echo "Launched workflow job: $WF_JOB_ID"
+
+      - name: Wait for AAP workflow to finish
+        env:
+          AAP_URL: ${{ secrets.AAP_URL }}
+          AAP_TOKEN: ${{ secrets.AAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Polling workflow job: $WF_JOB_ID"
+
+          for i in $(seq 1 90); do
+            DATA=$(curl -sS -k \
+              "${AAP_URL}/api/controller/v2/workflow_jobs/${WF_JOB_ID}/" \
+              -H "Authorization: Bearer ${AAP_TOKEN}" \
+              -H "Content-Type: application/json")
+
+            STATUS=$(python3 - << 'PY'
+import sys, json
+d=json.load(sys.stdin)
+print(d.get("status","unknown"))
+PY
+            <<< "$DATA")
+
+            FAILED=$(python3 - << 'PY'
+import sys, json
+d=json.load(sys.stdin)
+print(str(d.get("failed", False)).lower())
+PY
+            <<< "$DATA")
+
+            echo "Status: $STATUS | failed: $FAILED"
+
+            if [ "$STATUS" = "successful" ] && [ "$FAILED" = "false" ]; then
+              echo "✅ Workflow job successful"
+              exit 0
+            fi
+
+            if [ "$STATUS" = "failed" ] || [ "$STATUS" = "error" ] || [ "$STATUS" = "canceled" ] || [ "$FAILED" = "true" ]; then
+              echo "❌ Workflow job ended with status: $STATUS (failed=$FAILED)"
+              echo "See details: ${AAP_URL}/#/jobs/workflow/${WF_JOB_ID}"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "❌ Timeout waiting for workflow job."
+          exit 1
