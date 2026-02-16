@@ -1,0 +1,122 @@
+# ==========================================================
+# PIPELINE: 02 - CI + CD (Demo)
+# OBJETIVO:
+#   - CI: Validar que el repo se puede construir/empacar
+#   - CD: Simular un despliegue consumiendo un artefacto
+# POR QUÉ ES ÚTIL EN DEMO:
+#   - Muestra el flujo clásico "build -> artifact -> deploy"
+#   - No toca infraestructura real (costo 0)
+# CUÁNDO SE EJECUTA:
+#   - Manualmente (workflow_dispatch)
+# ==========================================================
+
+name: 02 - CI + CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: "Nombre de la liberación (demo)"
+        required: true
+        default: "release-001"
+      target_env:
+        description: "Ambiente destino (demo)"
+        required: true
+        type: choice
+        default: "dev"
+        options:
+          - dev
+          - qa
+          - production
+
+jobs:
+  build:
+    name: CI - Build & Package
+    runs-on: ubuntu-latest
+
+    steps:
+      # Paso 1: Clonar el repositorio
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Paso 2: Explicación para demo (visible en logs)
+      - name: Explain CI step
+        run: |
+          echo "🔧 CI (Build) - Objetivo"
+          echo "- Verificar que el repo se puede empacar en un agente limpio"
+          echo "- Generar un artefacto versionado para CD"
+          echo ""
+          echo "Inputs:"
+          echo "- release_name: ${{ inputs.release_name }}"
+          echo "- target_env:   ${{ inputs.target_env }}"
+
+      # Paso 3: Simulación de build (costo 0)
+      - name: Build (demo)
+        run: |
+          echo "Construyendo (demo)..."
+          mkdir -p dist
+          echo "release=${{ inputs.release_name }}" > dist/metadata.txt
+          echo "env=${{ inputs.target_env }}" >> dist/metadata.txt
+          echo "commit=${GITHUB_SHA}" >> dist/metadata.txt
+          echo "date=$(date -u)" >> dist/metadata.txt
+
+      # Paso 4: Empaquetar
+      - name: Package artifact
+        run: |
+          tar -czf dist/drop.tgz .
+          ls -lah dist
+
+      # Paso 5: Publicar artefacto para el job de CD
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drop
+          path: dist/drop.tgz
+
+      # Paso 6: Resumen ejecutivo
+      - name: Add CI summary
+        run: |
+          echo "## 02 - CI + CD (CI Stage)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Build/Package completado" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 Artifact: drop (drop.tgz)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Release: ${{ inputs.release_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌿 Commit: ${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: CD - Deploy Simulation
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+
+    steps:
+      # Paso 1: Descargar artefacto generado en CI
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: drop
+
+      # Paso 2: Explicación para demo (visible en logs)
+      - name: Explain CD step
+        run: |
+          echo "🚀 CD (Deploy) - Objetivo"
+          echo "- Consumir el artefacto generado por CI"
+          echo "- Simular despliegue al ambiente seleccionado"
+          echo "- Demostrar trazabilidad: release + commit + metadata"
+
+      # Paso 3: Simulación de despliegue (costo 0)
+      - name: Deploy (demo)
+        run: |
+          echo "Desplegando a: ${{ inputs.target_env }} (demo)"
+          mkdir -p unpacked
+          tar -xzf drop.tgz -C unpacked
+          echo "Artefacto descomprimido, mostrando metadata:"
+          cat unpacked/dist/metadata.txt || true
+
+      # Paso 4: Resumen ejecutivo
+      - name: Add CD summary
+        run: |
+          echo "## 02 - CI + CD (CD Stage)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deploy simulado completado" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎯 Environment: ${{ inputs.target_env }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 Artifact consumido: drop.tgz" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Release: ${{ inputs.release_name }}" >> $GITHUB_STEP_SUMMARY
