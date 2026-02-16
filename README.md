@@ -48,6 +48,24 @@ release: release-004
 change: CHG-1029
 
 dry_run: false
+04 – Multi-stage (manual)
+Cómo lo demo (rápido y con efecto)
+
+Settings → Environments → crea dev, qa, production
+
+Solo a production le ponés approvals (reviewers)
+
+Actions → 04 - Multi-stage → Run workflow
+
+Se ejecuta:
+
+DEV ✅
+
+QA ✅
+
+PROD queda “Waiting for approval” ✅ (wow)
+
+Aprobás y termina.
 
 Mostrás:
 
