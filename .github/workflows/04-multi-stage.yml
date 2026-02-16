@@ -1,0 +1,110 @@
+# ==========================================================
+# PIPELINE: 04 - Multi-stage (Dev -> QA -> Production)
+# OBJETIVO:
+#   - Demostrar control progresivo por ambientes
+#   - Simular un release que pasa por DEV, luego QA, y finalmente PROD
+# VALOR EN DEMO:
+#   - Muestra gobernanza y reducción de riesgo
+#   - PROD puede requerir aprobación usando GitHub Environments
+# CUÁNDO SE EJECUTA:
+#   - Manualmente (workflow_dispatch)
+# REQUERIMIENTOS RECOMENDADOS:
+#   - Crear Environments: dev, qa, production
+#   - Poner approvals SOLO en production (opcional)
+# ==========================================================
+
+name: 04 - Multi-stage
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: "Nombre de la liberación"
+        required: true
+        default: "release-004"
+      run_prod:
+        description: "¿Ejecutar etapa PROD?"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  dev:
+    name: Stage 1 - DEV
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Explain DEV stage
+        run: |
+          echo "🧪 STAGE DEV"
+          echo "- Objetivo: validar y desplegar en DEV (demo)"
+          echo "- Release:  ${{ inputs.release_name }}"
+          echo "- Commit:   ${GITHUB_SHA}"
+
+      - name: Deploy DEV (demo)
+        run: |
+          echo "Deploying to DEV (demo)..."
+          echo "OK DEV"
+
+      - name: DEV summary
+        run: |
+          echo "## 04 - Multi-stage (DEV)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ DEV completado" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Release: **${{ inputs.release_name }}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌿 Commit: **${GITHUB_SHA}**" >> $GITHUB_STEP_SUMMARY
+
+  qa:
+    name: Stage 2 - QA
+    needs: dev
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Explain QA stage
+        run: |
+          echo "🧪 STAGE QA"
+          echo "- Objetivo: validar en QA antes de PROD (demo)"
+          echo "- Gate natural: QA depende de DEV"
+          echo "- Release: ${{ inputs.release_name }}"
+
+      - name: Deploy QA (demo)
+        run: |
+          echo "Deploying to QA (demo)..."
+          echo "OK QA"
+
+      - name: QA summary
+        run: |
+          echo "## 04 - Multi-stage (QA)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ QA completado" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Release: **${{ inputs.release_name }}**" >> $GITHUB_STEP_SUMMARY
+
+  prod:
+    name: Stage 3 - PRODUCTION (Controlled)
+    needs: qa
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ inputs.run_prod == true }}
+    steps:
+      - name: Explain PROD stage
+        run: |
+          echo "🚀 STAGE PRODUCTION (CONTROLLED)"
+          echo "- Objetivo: desplegar a PROD con gobernanza"
+          echo "- Gate natural: PROD depende de QA"
+          echo "- Si 'production' tiene approvals, este stage esperará aprobación"
+          echo "- Release: ${{ inputs.release_name }}"
+
+      - name: Deploy PROD (demo)
+        run: |
+          echo "Deploying to PRODUCTION (demo)..."
+          echo "Release: ${{ inputs.release_name }}"
+          echo "Commit:  ${GITHUB_SHA}"
+          echo "OK PROD (simulado)"
+
+      - name: PROD summary
+        run: |
+          echo "## 04 - Multi-stage (PROD)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ PROD completado (simulado)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎯 Environment: **production**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Release: **${{ inputs.release_name }}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌿 Commit: **${GITHUB_SHA}**" >> $GITHUB_STEP_SUMMARY
