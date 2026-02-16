@@ -1,3 +1,12 @@
+# ==========================================================
+# PIPELINE: 01 - CI Simple
+# OBJETIVO:
+#   - Validar automáticamente el repositorio
+#   - Demostrar integración continua básica
+# CUÁNDO SE EJECUTA:
+#   - Manualmente (workflow_dispatch)
+# ==========================================================
+
 name: 01 - CI Simple
 
 on:
@@ -5,11 +14,31 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    runs-on: ubuntu-latest  # Agente hospedado por GitHub
 
-      - name: Basic validation
+    steps:
+
+      # Paso 1: Clonar el repositorio
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Paso 2: Explicación en consola (para demo)
+      - name: Explain CI purpose
         run: |
-          echo "CI Simple ejecutándose"
+          echo "🔎 CI SIMPLE PIPELINE"
+          echo "Este pipeline valida que el código pueda ejecutarse en un agente limpio."
+          echo "Demuestra automatización básica y control de calidad inicial."
+
+      # Paso 3: Validación básica
+      - name: Validate repository structure
+        run: |
+          echo "Listado de archivos:"
           ls -la
+
+      # Paso 4: Generar resumen ejecutivo
+      - name: Add summary
+        run: |
+          echo "## CI Simple - Resultado" >> $GITHUB_STEP_SUMMARY
+          echo "- Repositorio validado correctamente" >> $GITHUB_STEP_SUMMARY
+          echo "- Agente: ubuntu-latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Estado: OK" >> $GITHUB_STEP_SUMMARY
