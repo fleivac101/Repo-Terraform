@@ -1,0 +1,85 @@
+# ==========================================================
+# PIPELINE: 03 - Continuous Deployment (Controlled)
+# OBJETIVO:
+#   - Simular un despliegue automático a producción
+#   - Demostrar control real usando GitHub Environments
+#     (approvals / protection rules / audit trail)
+# POR QUÉ ES ÚTIL EN DEMO:
+#   - Se ve como "CD a PROD" pero con gobernanza
+#   - Costo 0: no toca infraestructura real
+# CUÁNDO SE EJECUTA:
+#   - Manualmente (workflow_dispatch)
+# REQUERIMIENTO:
+#   - Crear Environment en GitHub llamado: production
+#     (Settings -> Environments -> production)
+# ==========================================================
+
+name: 03 - Continuous Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: "Nombre de la liberación (demo)"
+        required: true
+        default: "release-003"
+      change_ticket:
+        description: "Ticket/Change (demo)"
+        required: true
+        default: "CHG-0001"
+      dry_run:
+        description: "Dry-run (no 'deploy')"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  deploy_prod:
+    name: CD - Deploy to Production (Controlled)
+    runs-on: ubuntu-latest
+
+    # Esto habilita approvals y reglas del Environment "production"
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Explain CD purpose
+        run: |
+          echo "🚀 CONTINUOUS DEPLOYMENT (CONTROLLED)"
+          echo "Objetivo: ejecutar un despliegue a producción con gobernanza."
+          echo ""
+          echo "Inputs:"
+          echo "- release_name:  ${{ inputs.release_name }}"
+          echo "- change_ticket: ${{ inputs.change_ticket }}"
+          echo "- dry_run:       ${{ inputs.dry_run }}"
+          echo ""
+          echo "Nota: Si el environment 'production' tiene approvals, este job quedará en 'Waiting'."
+
+      # Simulación de despliegue (costo 0)
+      - name: Deploy to production (demo)
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "🟡 DRY-RUN habilitado: no se ejecuta deploy."
+          else
+            echo "🟢 Deploying to PRODUCTION (demo)..."
+            echo "Release: ${{ inputs.release_name }}"
+            echo "Change:  ${{ inputs.change_ticket }}"
+            echo "Commit:  ${GITHUB_SHA}"
+            echo "Deploy completo (simulado)."
+          fi
+
+      # Resumen ejecutivo del run
+      - name: Add summary
+        run: |
+          echo "## 03 - Continuous Deployment (Controlled)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎯 Target environment: **production**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Release: **${{ inputs.release_name }}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧾 Change/Ticket: **${{ inputs.change_ticket }}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌿 Commit: **${GITHUB_SHA}**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "- 🟡 Mode: **DRY-RUN** (no deploy)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ✅ Mode: **DEPLOY (simulated)**" >> $GITHUB_STEP_SUMMARY
+          fi
