@@ -54,7 +54,7 @@ jobs:
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).subscriptionId }}
           ARM_TENANT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).tenantId }}
-        run: terraform init
+        run: terraform init -upgrade
 
       - name: Terraform Validate
         working-directory: devsecops-sql/
