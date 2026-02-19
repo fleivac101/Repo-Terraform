@@ -4,13 +4,13 @@ on:
   push:
     branches: [ "main", "master" ]
     paths:
-      - "devsecops-sql/**" 
+      - "azuredemo/terraform**" 
       - ".github/workflows/iac-governance.yml"
 
   pull_request:
     branches: [ "main", "master" ]
     paths:
-      - "devsecops-sql/**" 
+      - "azuredemo/terraform**" 
       - ".github/workflows/iac-governance.yml"
 
   workflow_dispatch:
