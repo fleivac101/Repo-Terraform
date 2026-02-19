@@ -68,7 +68,7 @@ jobs:
 
       # 1) CLI output (para comentario en PR) - no bloquea
       - name: Checkov scan (CLI output)
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         run: |
           set +e
           checkov -d . --framework terraform > ../checkov.txt
@@ -76,7 +76,7 @@ jobs:
 
       # 2) SARIF válido (archivo)
       - name: Checkov scan (SARIF)
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         run: |
           set +e
           checkov -d . --framework terraform --output sarif --output-file-path checkov.sarif
@@ -116,7 +116,7 @@ jobs:
       # ✅ Nivel 1: Plan + Governance Gate
       # =========================
       - name: Terraform Plan
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.ARM_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.ARM_CREDENTIALS).clientSecret }}
@@ -135,7 +135,7 @@ jobs:
           terraform plan -out=tfplan
 
       - name: Export plan to JSON
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         run: terraform show -json tfplan > tfplan.json
 
       # =========================
@@ -147,7 +147,7 @@ jobs:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
       - name: Run Infracost breakdown (from plan)
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         run: |
           infracost breakdown \
             --path=tfplan.json \
@@ -155,14 +155,14 @@ jobs:
             --out-file=infracost.json
 
       - name: Show cost summary
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         run: |
           infracost output \
             --path=infracost.json \
             --format=table
 
       - name: Enforce cost policy
-        working-directory: devsecops-sql
+        working-directory: azuredemo/terraform
         env:
           MAX_MONTHLY_USD: "50"
         run: |
